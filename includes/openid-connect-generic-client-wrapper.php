@@ -50,7 +50,7 @@ class OpenID_Connect_Generic_Client_Wrapper {
 		// integrated logout
 		if ( $settings->endpoint_end_session ) {
 			add_filter( 'allowed_redirect_hosts', array( $client_wrapper, 'update_allowed_redirect_hosts' ), 99, 1 );
-			add_filter( 'logout_redirect', array( $client_wrapper, 'get_end_session_logout_redirect_url' ), 99, 1 );
+			add_filter( 'logout_redirect', array( $client_wrapper, 'get_end_session_logout_redirect_url' ), 99, 3 );
 		}
 
 		// alter the requests according to settings
@@ -241,25 +241,21 @@ class OpenID_Connect_Generic_Client_Wrapper {
 	 * Handle the logout redirect for end_session endpoint
 	 *
 	 * @param $redirect_url
+         * @param $requested_redirect_url
+         * @param $user
 	 *
 	 * @return string
 	 */
-	function get_end_session_logout_redirect_url( $redirect_url ) {
+	function get_end_session_logout_redirect_url( $redirect_url, $requested_redirect_url, $user ) {
 		$url = $this->settings->endpoint_end_session;
 		$query = parse_url( $url, PHP_URL_QUERY );
-		$url .= $query ? '&' : '?';
 
-		// prevent redirect back to the IdP when logging out in auto mode
-		if ( $this->settings->login_type === 'auto' && $redirect_url === 'wp-login.php?loggedout=true' ) {
-			$redirect_url = '';
-		}
+                $last_id_token = $this->get_last_id_token( $user->ID );
+                if ( isset( $last_id_token ) ){
+                       $url .= $query ? '&' : '?';
+                       $url .= 'id_token_hint=' . urlencode( $last_id_token );
+                }
 
-		// convert to absolute url if needed
-		if ( ! parse_url( $redirect_url, PHP_URL_HOST ) ) {
-			$redirect_url = home_url( $redirect_url );
-		}
-
-		$url .= 'post_logout_redirect_uri=' . urlencode( $redirect_url );
 		return $url;
 	}
 
@@ -507,6 +503,19 @@ class OpenID_Connect_Generic_Client_Wrapper {
 
 		return $user_encryption_key;
 	}
+
+        /**
+         * Get a user's last_id_token
+         *
+         * @param $user_id
+         *
+         * @return string
+         */
+        function get_last_id_token( $user_id ){
+            $token_response = get_user_meta( $user_id, 'openid-connect-generic-last-token-response' , TRUE);
+
+            return $token_response['id_token'];
+        }
 	
 	/**
 	 * Get the user that has meta data matching a 
